@@ -203,7 +203,7 @@ static uint8_t start_rec [] = {0x16, 0xfe, 0xfd};
 static size_t start_rec_len = 3;
 
 static int
-dtls_handle_read(struct dtls_context_t *ctx, uint8_t *buf, int len, int IS_SERVER) {
+dtls_handle_read(struct dtls_context_t *ctx, uint8_t *buf, int len) {
   int *fd;
   session_t session;
   dtls_peer_t *peer;
@@ -269,7 +269,7 @@ int fuzz_file(const uint8_t *record, size_t size, char* crypt, int packet_order)
   dtls_context_t *the_client_context = NULL;
   fd_set rfds, wfds;
   struct timeval timeout;
-  int fd=100, opt, result;
+  int fd=100, opt, result=0;
   FILE *f = NULL;
   static uint8_t buf[MAX_READ_BUFF];
   char file_name[MAX_FILENAME_LEN], base_name[MAX_FILENAME_LEN];
@@ -283,7 +283,6 @@ int fuzz_file(const uint8_t *record, size_t size, char* crypt, int packet_order)
                      1 /*CCS*/, 1 /*FIN*/};
   int * roles; // array 
   
-
   if(strcmp(crypt, "psk") == 0){
     sprintf(base_name, "%s/", PSK_HANDSHAKE_FOLDER);
     if (dump_output_mode) {
@@ -317,21 +316,31 @@ int fuzz_file(const uint8_t *record, size_t size, char* crypt, int packet_order)
     return 0;
   }
 
-  dtls_init();
-  the_server_context = dtls_new_context(&fd);
-  dtls_set_handler(the_server_context, &sb);
+  if (packet_order >= no_of_msg) {
+    dtls_alert("Invalid packet order\n");
+  }
 
-  the_client_context = dtls_new_context(&fd);
-  dtls_set_handler(the_client_context, &cb);
-  // FILE* writeFile = fopen("RESULT.txt", "a");
-  
-  // initializing socket address
-  session_t session;
-  memset(&session, 0, sizeof(session_t));
-  session.size = sizeof(session.addr);
-  populate_sockaddr((struct sockaddr_in *)&session.addr.sa);
-  // this should kick-start the client
-  dtls_connect(the_client_context, &session);
+  int step_client = dump_output_mode || roles[packet_order];
+  int step_server = dump_output_mode || !roles[packet_order];
+
+  dtls_init();
+  if (step_server) {
+    the_server_context = dtls_new_context(&fd);
+    dtls_set_handler(the_server_context, &sb);
+  }
+  if (step_client) {
+    the_client_context = dtls_new_context(&fd);
+    dtls_set_handler(the_client_context, &cb);
+    // FILE* writeFile = fopen("RESULT.txt", "a");
+    
+    // initializing socket address
+    session_t session;
+    memset(&session, 0, sizeof(session_t));
+    session.size = sizeof(session.addr);
+    populate_sockaddr((struct sockaddr_in *)&session.addr.sa);
+    // this should kick-start the client
+    dtls_connect(the_client_context, &session);
+  }
 
   for (int i=0; i<no_of_msg; i++) {
     sprintf(file_name, "%s%d", base_name, i);
@@ -350,22 +359,23 @@ int fuzz_file(const uint8_t *record, size_t size, char* crypt, int packet_order)
         memcpy(buf, record, size);
         len = size;
     }
-
-    // fprintf(writeFile, "/////////////////// %s ///////////////\n", argv[i+1]);
-    // printf("/////////////////// %s ///////////////\n", argv[i+1]);
-    // if(strncmp(argv[i+1]+strlen(argv[i+1])-1, "s", 1) == 0){
-    //   result = dtls_handle_read(the_client_context, f, 0);
-    // } else {
-    //   result = dtls_handle_read(the_server_context, f, 1);
-    // }
-    // printf("Iteration %d\n",i);
     
     if (!roles[i]) {
-      // server role (server should process it)
-      result = dtls_handle_read(the_server_context, buf, len, 1);
+      if (step_server) {
+        // server role (server should process it)
+        result = dtls_handle_read(the_server_context, buf, len);
+      } else {
+        // we are not stepping the server
+        continue;
+      }
     } else {
-      // client role (client should process it)
-      result = dtls_handle_read(the_client_context, buf, len, 0);
+      if (step_client) {
+        // client role (client should process it)
+        result = dtls_handle_read(the_client_context, buf, len);
+      } else {
+        // we are not stepping the client
+        continue;
+      }
     }
 
     if(result){
@@ -383,8 +393,13 @@ int fuzz_file(const uint8_t *record, size_t size, char* crypt, int packet_order)
     fclose(f);
   }
 
-  dtls_free_context(the_server_context);
-  dtls_free_context(the_client_context);
+  if (the_server_context != NULL) {
+    dtls_free_context(the_server_context);
+  }
+
+  if (the_client_context != NULL) {
+    dtls_free_context(the_client_context);
+  }
   return 0;
 }
 
