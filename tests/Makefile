@@ -33,8 +33,8 @@ endif
 # With coverage or not
 ifdef cov
 COV =  -fprofile-arcs -ftest-coverage
-else 
-COV = 
+else
+COV =
 endif
 
 DEBUG_MODE:= -g
@@ -47,7 +47,7 @@ LIB:=../libtinydtls.a
 
 OBJECTS := $(patsubst %.c, %.o, $(SOURCES))
 
-CFLAGS  := $(OPT) $(COV) $(SAN) $(BITS) $(DEBUG_MODE) -DLOG_LEVEL_DTLS=$(LOG_LEVEL_DTLS) -I. -I.. -I../$(DTLS_SUPPORT)
+CFLAGS  := $(OPT) $(COV) -O -fsanitize=address -fno-omit-frame-pointer $(BITS) $(DEBUG_MODE) -DLOG_LEVEL_DTLS=$(LOG_LEVEL_DTLS) -I. -I.. -I../$(DTLS_SUPPORT)
 LDFLAGS := -L..
 LDLIBS  := -ltinydtls
 
